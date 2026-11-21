@@ -84,7 +84,8 @@ ON CONFLICT (defect_type) DO NOTHING;
 INSERT INTO app_contractor_batch (id, batch_code, contractor, inspected_at, grading_standard, direction_convention, content_hash) VALUES
  (1, 'B-2025-01', '甲勘测院',   TIMESTAMP '2025-03-10 09:00:00', 'STD-CCT-2021', '上游井起算，里程沿前进方向递增', 'hash:batch:b202501'),
  (2, 'B-2025-02', '乙检测公司', TIMESTAMP '2025-09-18 10:30:00', 'STD-DX-2023',  '下游井起算，反向里程（0 在下游井）', 'hash:batch:b202502'),
- (3, 'B-2026-03', '甲勘测院复测', TIMESTAMP '2026-03-05 14:00:00', 'STD-CCT-2021', '上游井起算，里程沿前进方向递增', 'hash:batch:b202603')
+ (3, 'B-2026-03', '甲勘测院复测', TIMESTAMP '2026-03-05 14:00:00', 'STD-CCT-2021', '上游井起算，里程沿前进方向递增', 'hash:batch:b202603'),
+ (4, 'B-2025-04', '丙检测公司',   TIMESTAMP '2025-05-12 09:00:00', 'STD-CCT-2021', '上游井起算，里程沿前进方向递增', 'hash:batch:b202504')
 ON CONFLICT (batch_code) DO NOTHING;
 
 -- ---------------------------------------------------------------- 视频索引
@@ -97,7 +98,8 @@ INSERT INTO app_video (id, batch_id, video_code, file_uri, segment_hint, start_m
  (5, 3, 'VID-B3-WS001-DUP', 'archive://2026/B3/ws001-copy.mp4','WS-001',  0.000, 60.000, 'FORWARD',  'sha256:vid-ws001-full',    1),
  (6, 3, 'VID-B3-WS001-OVL', 'archive://2026/B3/ws001-part.mp4','WS-001',  8.000, 20.000, 'FORWARD',  'sha256:vid-ws001-partial', NULL),
  (7, 1, 'VID-B1-WS003',     'archive://2025/B1/ws003.mp4',     'WS-003',  0.000, 40.000, 'FORWARD',  'sha256:vid-ws003',         NULL),
- (8, 2, 'VID-B2-WS003',     'archive://2025/B2/ws003-rev.mp4', 'WS-003',  0.000, 40.000, 'REVERSED', 'sha256:vid-ws003-rev',     NULL)
+ (8, 2, 'VID-B2-WS003',     'archive://2025/B2/ws003-rev.mp4', 'WS-003',  0.000, 40.000, 'REVERSED', 'sha256:vid-ws003-rev',     NULL),
+ (9, 4, 'VID-B4-WS001',     'archive://2025/B4/ws001.mp4',     'WS-001',  0.000, 60.000, 'FORWARD',  'sha256:vid-ws001-b4',      NULL)
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------- 观察
@@ -124,7 +126,10 @@ INSERT INTO app_observation
  (11, 7, 1, 'DEFORMATION', 'IV',  21.000, 23.000, 'archive://2025/B1/frames/obs-011.zip', 'FULL',    'PENDING', NULL),
  (12, 7, 1, 'LEAK',        'II',  30.000, 31.000, 'archive://2025/B1/frames/obs-012.zip', 'PARTIAL', 'PENDING', NULL),
 -- B2 反向里程复检 WS-003：反向 30–32 ⇒ 归一 8–10，与 OBS-10 同位置同等级
- (13, 8, 2, 'CRACK',       'C',   30.000, 32.000, 'archive://2025/B2/frames/obs-013.zip', 'FULL',    'PENDING', NULL)
+ (13, 8, 2, 'CRACK',       'C',   30.000, 32.000, 'archive://2025/B2/frames/obs-013.zip', 'FULL',    'PENDING', NULL),
+-- 丙公司 CCT 批次与甲公司在 WS-001 同一轻微裂缝位置自然重叠（等级 I，低于判读门槛，不影响风险排序）
+ (15, 9, 4, 'CRACK',       'I',   55.600, 56.000, 'archive://2025/B4/frames/obs-015.zip', 'FULL',    'PENDING', NULL),
+ (16, 1, 1, 'CRACK',       'I',   55.500, 56.100, 'archive://2025/B1/frames/obs-016.zip', 'FULL',    'PENDING', NULL)
 ON CONFLICT DO NOTHING;
 
 -- 校正显式插入后的 identity 序列，避免后续自增冲突
@@ -136,3 +141,132 @@ SELECT setval(pg_get_serial_sequence('app_segment_mapping','id'),    (SELECT max
 SELECT setval(pg_get_serial_sequence('app_contractor_batch','id'),   (SELECT max(id) FROM app_contractor_batch));
 SELECT setval(pg_get_serial_sequence('app_video','id'),              (SELECT max(id) FROM app_video));
 SELECT setval(pg_get_serial_sequence('app_observation','id'),        (SELECT max(id) FROM app_observation));
+
+-- ============================================================================
+-- 判读一致性样例（虚构）：
+--   * 设计分层样本 DS-*：仅覆盖轻微/中等缺陷，缺 SEVERE 层 ⇒ 不得声称严重结构问题一致
+--   * 自然重叠样本 NS-*：跨承包商复检；不同规程版本各自成层，跨版本判读被排除
+--   * 非盲复核：R-REV2 在看到首评后才打分，不作为独立盲评证据
+--   * 单家样本稀少：R-BING 仅 1 个有效共同样本；R-REV2 无有效样本
+--   * 空间难度不均：自然样本集中在 AREA-B/HIGH，便于观察区域难度对偏差的影响
+-- ============================================================================
+
+INSERT INTO app_consistency_reader (id, reader_code, reader_name, reader_type, vendor_name, note) VALUES
+ (1, 'R-JIA',  '甲勘测院判读组',     'CONTRACTOR', '甲勘测院',   '负责 AREA-A/AREA-B 日常检测'),
+ (2, 'R-YI',   '乙检测公司判读组',   'CONTRACTOR', '乙检测公司', '采用 STD-DX-2023 分级标准'),
+ (3, 'R-BING', '丙检测公司判读组',   'CONTRACTOR', '丙检测公司', '新进场，共享样本稀少'),
+ (4, 'R-REV1', '工程处复核一组',     'REVIEWER',   NULL,         '独立盲评复核'),
+ (5, 'R-REV2', '工程处复核二组',     'REVIEWER',   NULL,         '曾查看首评后复核，非独立盲评')
+ON CONFLICT (reader_code) DO NOTHING;
+
+INSERT INTO app_consistency_sample
+ (id, sample_code, source_type, standard_code, defect_type, severity_band, region_code, difficulty_band,
+  video_id, canonical_video_id, canonical_key, segment_code, clip_start_m, clip_end_m,
+  reference_grade, reference_source, status, origin_ref, sampling_note, created_by) VALUES
+ -- 设计分层：标准 CCT，轻/中度，区域难度分层；无 SEVERE
+ (1, 'DS-001', 'DESIGNED_STRATIFIED', 'STD-CCT-2021', 'CRACK',              'MINOR',   'AREA-A', 'LOW',
+  1, 1, 'S:WS-001:10.000-12.500:CRACK:STD-CCT-2021', 'WS-001', 10.000, 12.500, 2, 'DESIGN', 'OPEN',
+  'obs:1', '轻微裂缝，分层抽取', 1),
+ (2, 'DS-002', 'DESIGNED_STRATIFIED', 'STD-CCT-2021', 'CRACK',              'MODERATE','AREA-B', 'HIGH',
+  7, 7, 'S:WS-003:8.000-10.000:CRACK:STD-CCT-2021',  'WS-003', 8.000, 10.000, 3, 'DESIGN', 'OPEN',
+  'obs:10', '中度裂缝，高难度区域', 1),
+ (3, 'DS-003', 'DESIGNED_STRATIFIED', 'STD-CCT-2021', 'LEAK',               'MINOR',   'AREA-A', 'LOW',
+  1, 1, 'S:WS-001:30.000-31.000:LEAK:STD-CCT-2021',   'WS-001', 30.000, 31.000, 2, 'DESIGN', 'OPEN',
+  'obs:2', '轻微渗漏', 1),
+ (4, 'DS-004', 'DESIGNED_STRATIFIED', 'STD-CCT-2021', 'JOINT_DISLOCATION', 'MODERATE','AREA-B', 'MID',
+  3, 3, 'S:WS-002:15.000-15.500:JOINT_DISLOCATION:STD-CCT-2021', 'WS-002', 15.000, 15.500, 3, 'DESIGN', 'OPEN',
+  'obs:5', '接口错位', 1),
+ (5, 'DS-005', 'DESIGNED_STRATIFIED', 'STD-CCT-2021', 'DEFORMATION',       'MINOR',   'AREA-A', 'LOW',
+  2, 2, 'S:WS-001:39.000-40.000:DEFORMATION:STD-CCT-2021', 'WS-001', 39.000, 40.000, 2, 'DESIGN', 'OPEN',
+  'obs:4', '轻微变形', 1),
+ -- 自然重叠：同一物理位置的不同承包商复检；按规程版本分样本
+ (6, 'NS-001', 'NATURAL_OVERLAP', 'STD-CCT-2021', 'LEAK', 'MINOR', 'AREA-A', 'LOW',
+  1, 1, 'S:WS-001:30.000-31.000:LEAK:STD-CCT-2021', 'WS-001', 30.000, 31.000,
+  NULL, 'PEER_CONSENSUS', 'OPEN', 'overlap:B-2025-01/B-2025-02', '日常复检自然重叠', 1),
+ (7, 'NS-002', 'NATURAL_OVERLAP', 'STD-CCT-2021', 'CRACK', 'MODERATE', 'AREA-B', 'HIGH',
+  7, 7, 'S:WS-003:8.000-10.000:CRACK:STD-CCT-2021', 'WS-003', 8.000, 10.000,
+  NULL, 'PEER_CONSENSUS', 'OPEN', 'overlap:B-2025-01/B-2025-02', '同一裂缝不同承包商复检', 1),
+ (8, 'NS-003', 'NATURAL_OVERLAP', 'STD-CCT-2021', 'DEFORMATION', 'SEVERE', 'AREA-B', 'HIGH',
+  7, 7, 'S:WS-003:21.000-23.000:DEFORMATION:STD-CCT-2021', 'WS-003', 21.000, 23.000,
+  NULL, 'PEER_CONSENSUS', 'OPEN', 'overlap:B-2025-01/B-2025-02', '严重变形，仅自然重叠覆盖', 1),
+ (9, 'NS-004', 'NATURAL_OVERLAP', 'STD-DX-2023', 'JOINT_DISLOCATION', 'MODERATE', 'AREA-B', 'HIGH',
+  4, 4, 'S:WS-002:15.000-15.600:JOINT_DISLOCATION:STD-DX-2023', 'WS-002', 15.000, 15.600,
+  NULL, 'PEER_CONSENSUS', 'OPEN', 'overlap:B-2025-02', 'DX 规程独立分层，不与 CCT 混算', 1)
+ON CONFLICT (sample_code) DO NOTHING;
+
+-- 盲评任务（匿名身份由服务端保存，此处为样例）
+INSERT INTO app_consistency_assignment (id, sample_id, reader_id, blind_identity, status, submitted_at) VALUES
+ (1,  1, 1, 'BLD-S1-01', 'SUBMITTED', TIMESTAMP '2026-10-01 09:00:00'),
+ (2,  1, 2, 'BLD-S1-02', 'SUBMITTED', TIMESTAMP '2026-10-01 10:00:00'),
+ (3,  1, 4, 'BLD-S1-03', 'SUBMITTED', TIMESTAMP '2026-10-01 11:00:00'),
+ (4,  1, 3, 'BLD-S1-04', 'SUBMITTED', TIMESTAMP '2026-10-02 09:00:00'),
+ (5,  2, 1, 'BLD-S2-01', 'SUBMITTED', TIMESTAMP '2026-10-02 09:30:00'),
+ (6,  2, 2, 'BLD-S2-02', 'SUBMITTED', TIMESTAMP '2026-10-02 10:30:00'),
+ (7,  2, 4, 'BLD-S2-03', 'SUBMITTED', TIMESTAMP '2026-10-02 11:30:00'),
+ (8,  2, 5, 'BLD-S2-04', 'SUBMITTED', TIMESTAMP '2026-10-03 09:00:00'),
+ (9,  3, 1, 'BLD-S3-01', 'SUBMITTED', TIMESTAMP '2026-10-03 09:30:00'),
+ (10, 3, 2, 'BLD-S3-02', 'SUBMITTED', TIMESTAMP '2026-10-03 10:30:00'),
+ (11, 3, 4, 'BLD-S3-03', 'SUBMITTED', TIMESTAMP '2026-10-03 11:30:00'),
+ (12, 4, 1, 'BLD-S4-01', 'SUBMITTED', TIMESTAMP '2026-10-04 09:00:00'),
+ (13, 4, 2, 'BLD-S4-02', 'SUBMITTED', TIMESTAMP '2026-10-04 10:00:00'),
+ (14, 4, 4, 'BLD-S4-03', 'SUBMITTED', TIMESTAMP '2026-10-04 11:00:00'),
+ (15, 4, 3, 'BLD-S4-04', 'SUBMITTED', TIMESTAMP '2026-10-04 12:00:00'),
+ (16, 5, 1, 'BLD-S5-01', 'SUBMITTED', TIMESTAMP '2026-10-05 09:00:00'),
+ (17, 5, 2, 'BLD-S5-02', 'SUBMITTED', TIMESTAMP '2026-10-05 10:00:00'),
+ (18, 5, 4, 'BLD-S5-03', 'SUBMITTED', TIMESTAMP '2026-10-05 11:00:00'),
+ (19, 6, 1, 'BLD-N1-01', 'SUBMITTED', TIMESTAMP '2026-10-06 09:00:00'),
+ (20, 6, 4, 'BLD-N1-02', 'SUBMITTED', TIMESTAMP '2026-10-06 10:00:00'),
+ (21, 6, 2, 'BLD-N1-03', 'SUBMITTED', TIMESTAMP '2026-10-06 11:00:00'),
+ (22, 7, 1, 'BLD-N2-01', 'SUBMITTED', TIMESTAMP '2026-10-07 09:00:00'),
+ (23, 7, 4, 'BLD-N2-02', 'SUBMITTED', TIMESTAMP '2026-10-07 10:00:00'),
+ (24, 7, 2, 'BLD-N2-03', 'SUBMITTED', TIMESTAMP '2026-10-07 11:00:00'),
+ (25, 8, 1, 'BLD-N3-01', 'SUBMITTED', TIMESTAMP '2026-10-08 09:00:00'),
+ (26, 8, 4, 'BLD-N3-02', 'SUBMITTED', TIMESTAMP '2026-10-08 10:00:00'),
+ (27, 8, 2, 'BLD-N3-03', 'SUBMITTED', TIMESTAMP '2026-10-08 11:00:00'),
+ (28, 9, 2, 'BLD-N4-01', 'SUBMITTED', TIMESTAMP '2026-10-09 09:00:00'),
+ (29, 9, 1, 'BLD-N4-02', 'SUBMITTED', TIMESTAMP '2026-10-09 10:00:00')
+ON CONFLICT (sample_id, reader_id) DO NOTHING;
+
+-- 判读记录：
+--   * 8 号：非盲（看到 5 号首评后打分），一致性计算必须排除
+--   * 15 号：乙公司按 DX 规程判读 CCT 样本，跨规程排除
+--   * 21/24/27 号：乙公司对 CCT 样本按 DX 原始等级判读，跨规程排除
+--   * 29 号：甲公司对 DX 样本按 CCT 判读，跨规程排除
+INSERT INTO app_consistency_reading
+ (id, sample_id, reader_id, assignment_id, source_batch_id, blind_identity, standard_code, raw_grade,
+  normalized_grade, blind, independent, seen_prior_reading_id, active, revision_no, note) VALUES
+ (1,  1, 1, 1,  NULL, 'BLD-S1-01', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (2,  1, 2, 2,  NULL, 'BLD-S1-02', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (3,  1, 4, 3,  NULL, 'BLD-S1-03', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (4,  1, 3, 4,  NULL, 'BLD-S1-04', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (5,  2, 1, 5,  NULL, 'BLD-S2-01', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, NULL),
+ (6,  2, 2, 6,  NULL, 'BLD-S2-02', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (7,  2, 4, 7,  NULL, 'BLD-S2-03', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, NULL),
+ (8,  2, 5, 8,  NULL, 'BLD-S2-04', 'STD-CCT-2021', 'III', 3, false, false, 5,    true, 1, '看到首评后才复核'),
+ (9,  3, 1, 9,  NULL, 'BLD-S3-01', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, NULL),
+ (10, 3, 2, 10, NULL, 'BLD-S3-02', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (11, 3, 4, 11, NULL, 'BLD-S3-03', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (12, 4, 1, 12, NULL, 'BLD-S4-01', 'STD-CCT-2021', 'IV',  4, true,  true,  NULL, true, 1, NULL),
+ (13, 4, 2, 13, NULL, 'BLD-S4-02', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, NULL),
+ (14, 4, 4, 14, NULL, 'BLD-S4-03', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, NULL),
+ (15, 4, 3, 15, 2,    'BLD-S4-04', 'STD-DX-2023',  'C',   3, true,  true,  NULL, true, 1, '源自 DX 批次，跨规程'),
+ (16, 5, 1, 16, NULL, 'BLD-S5-01', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (17, 5, 2, 17, NULL, 'BLD-S5-02', 'STD-CCT-2021', 'I',   1, true,  true,  NULL, true, 1, NULL),
+ (18, 5, 4, 18, NULL, 'BLD-S5-03', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (19, 6, 1, 19, 1,    'BLD-N1-01', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (20, 6, 4, 20, NULL, 'BLD-N1-02', 'STD-CCT-2021', 'II',  2, true,  true,  NULL, true, 1, NULL),
+ (21, 6, 2, 21, 2,    'BLD-N1-03', 'STD-DX-2023',  'B',   2, true,  true,  NULL, true, 1, '跨规程'),
+ (22, 7, 1, 22, 1,    'BLD-N2-01', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, NULL),
+ (23, 7, 4, 23, NULL, 'BLD-N2-02', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, NULL),
+ (24, 7, 2, 24, 2,    'BLD-N2-03', 'STD-DX-2023',  'C',   3, true,  true,  NULL, true, 1, '跨规程'),
+ (25, 8, 1, 25, 1,    'BLD-N3-01', 'STD-CCT-2021', 'IV',  4, true,  true,  NULL, true, 1, NULL),
+ (26, 8, 4, 26, NULL, 'BLD-N3-02', 'STD-CCT-2021', 'IV',  4, true,  true,  NULL, true, 1, NULL),
+ (27, 8, 2, 27, 2,    'BLD-N3-03', 'STD-DX-2023',  'D',   4, true,  true,  NULL, true, 1, '跨规程'),
+ (28, 9, 2, 28, 2,    'BLD-N4-01', 'STD-DX-2023',  'D',   4, true,  true,  NULL, true, 1, NULL),
+ (29, 9, 1, 29, 1,    'BLD-N4-02', 'STD-CCT-2021', 'III', 3, true,  true,  NULL, true, 1, '跨规程')
+ON CONFLICT DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('app_consistency_reader','id'),    (SELECT max(id) FROM app_consistency_reader));
+SELECT setval(pg_get_serial_sequence('app_consistency_sample','id'),    (SELECT max(id) FROM app_consistency_sample));
+SELECT setval(pg_get_serial_sequence('app_consistency_assignment','id'),(SELECT max(id) FROM app_consistency_assignment));
+SELECT setval(pg_get_serial_sequence('app_consistency_reading','id'),   (SELECT max(id) FROM app_consistency_reading));

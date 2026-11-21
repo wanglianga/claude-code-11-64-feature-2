@@ -36,4 +36,27 @@ public final class Requests {
 
     public record AdjudicateRequest(@NotNull Integer resolvedGrade, @NotBlank String note) {
     }
+
+    // ------------------------------------------------------------ 判读一致性域
+    /** 分层抽取共同样本：按规程版本 + 严重度层各抽若干条。 */
+    public record SampleDrawRequest(@NotBlank String standardCode,
+                                    java.util.Map<String, Integer> perBandQuota,
+                                    java.util.List<Long> readerIds,
+                                    String note) {
+    }
+
+    public record ReadingSubmitRequest(@NotNull Long sampleId, @NotNull Long readerId,
+                                       @NotBlank String rawGrade, Boolean blind,
+                                       Boolean independent, Long seenPriorReadingId,
+                                       Long sourceBatchId, String note) {
+    }
+
+    /** 承包商更正原判读：生成新版本，旧记录保留并标记已被取代。 */
+    public record ReadingCorrectRequest(@NotBlank String rawGrade, @NotBlank String reason) {
+    }
+
+    /** 发布质量画像：method = DESIGNED / NATURAL / ALL。 */
+    public record ProfilePublishRequest(@NotBlank String method, String standardScope,
+                                        String revisionReason) {
+    }
 }

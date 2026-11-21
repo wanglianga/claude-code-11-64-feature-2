@@ -23,6 +23,13 @@
    - 最高严重等级（MAX_SEVERITY）：取管段内经确认缺陷的最高归一等级，同分按负担分次序——突出局部失效；
    - 累计负担分（BURDEN）：`Σ 缺陷区间长度(m) × 等级(1-4) × 证据权重(FULL=1.0/PARTIAL=0.8/SPARSE=0.6)`——体现广泛劣化。
 7. **判读规则门槛**：缺陷需同时满足最低等级、最短区间长度、最低证据强度才进入数据集；规则可在页面调整后重新生成。
+8. **承包商判读一致性（本次新增）**：
+   - 共同样本库保存被不同承包商/复核人员独立判读的**同一视频片段、规程版本、盲评身份和原始等级**；
+   - 一致性按「规程版本 × 缺陷类型 × 严重度层（自然样本另加区域）」输出**配对差异、混淆分布与自助法不确定区间**；
+   - 偏差在**样本内部**比较（留一法同侪共识），抵消承包商负责管段的难度差异；质量画像只发布、**不回写已发布缺陷等级**。
+   - 两条估计路径并存、按覆盖边界选择：**设计分层样本**精度高但需额外复核工时、更新慢；**自然重叠复检**覆盖更广但受区域难度与复检选择偏差影响。
+   - 硬性边界：共享样本不含严重缺陷时不得声称对严重结构一致；同一视频多人评分只算一个样本；不同规程版本不混算；
+     看到首评后才打分不算独立盲评；判读更正生成新版本并列出受影响批次，旧画像仍可查。
 
 ## 2. 目录结构
 
@@ -37,17 +44,17 @@
 │       └── resources/
 │           ├── application.yml
 │           └── db/
-│               ├── schema.sql        # 17 张表，IF NOT EXISTS 可重复执行
-│               └── seed-data.sql     # 虚构样例（反向里程/拆分/冲突/重复片段）
+│               ├── schema.sql        # 25 张表，IF NOT EXISTS 可重复执行（含判读一致性 6 张）
+│               └── seed-data.sql     # 虚构样例（反向里程/拆分/冲突/重复片段/判读一致性）
 └── frontend/                   # Vue 3 工程
     ├── Dockerfile  nginx.conf
-    └── src/                    # views 7 个页面 + stores/router/api/components
+    └── src/                    # views 9 个页面 + stores/router/api/components
 ```
 
 ## 3. 一键启动（Docker Compose）
 
 ```bash
-cd /workspace/64
+cd /workspace/64-feature-2
 docker compose up --build
 ```
 
@@ -92,7 +99,7 @@ npm run dev
 
 ## 6. 验证方式
 
-### 6.1 自动化测试（已实际执行，12 个用例全部通过）
+### 6.1 自动化测试（已实际执行，22 个用例全部通过：原有 12 + 一致性 10）
 
 ```bash
 # 需要可连接的 PostgreSQL；测试自动使用独立库 ccdev_test（静态块重建 schema）
@@ -102,7 +109,9 @@ mvn test
 ```
 
 覆盖：反向里程归一、时点版本固定与候选落选、重复视频/重叠片段不重复累加、不相容等级冲突与暂停排序、
-拆分继承与跨点隔离不复制、双口径评分与解释、历史版本复现、重复上传 409 拦截、人工裁决恢复排序。
+拆分继承与跨点隔离不复制、双口径评分与解释、历史版本复现、重复上传 409 拦截、人工裁决恢复排序；
+以及一致性服务的严重度不均衡、非盲复核排除、规程切换分层、重复片段合并、区域难度分层、单家样本稀少标记、
+更正版本链与画像版本化、画像不回写已发布等级、重复录入 409 与更正、画像方法与规程范围隔离。
 
 ### 6.2 页面手工验收脚本（虚构样例数据）
 
@@ -117,6 +126,13 @@ mvn test
 | 7 | 历史复现 | 选择 V2024-01 生成数据集：WS-003 仍为整段、3 个入围缺陷且不暂停，证明修订未搬动历史缺陷 |
 | 8 | 上传拦截 | 归档上传页提交内容哈希 `hash:batch:b202501` 的新批次 → 409 拒绝；哈希 `sha256:vid-ws001-full` 的视频 → 标记重复并给重叠警示 |
 | 9 | 裁决恢复 | 聚类页对冲突簇裁决等级 4 → 重新生成数据集后 WS-002 获得顺位，动作写入审计日志 |
+| 10 | 严重度不均衡 | 一致性页「分层一致性」选“设计分层”：会提示“未覆盖 SEVERE / 不得外推到严重缺陷”，须如实说明不能据此声称严重问题一致 |
+| 11 | 非盲复核 | 证据弹窗打开 DS-002：#8（R-REV2 看到首评后打分）列入“已排除”，配对里不出现该判读方 |
+| 12 | 规程切换 | DS-004（CCT 样本）中按 DX 判读的记录列入跨规程排除；DX 样本层不含 CCT 判读，二者不混算 |
+| 13 | 重复视频不重复计数 | 一致性摘要 “合并重复样本 ≥1”；DS-001 有 4 位判读方但样本数仍为 1 |
+| 14 | 空间难度不均 | 识别自然重叠后，分层结果出现 AREA-A/AREA-B 区域层，并提示区域分布不均与复检选择偏差 |
+| 15 | 单家样本稀少 | 发布设计画像：`sparseReaderCodes` 含 R-BING(1)，对应指标标记“样本稀少”，不据此定论 |
+| 16 | 更正与画像版本 | 证据弹窗更正某判读 → 旧记录保留为历史、新记录版本+1；重新发布画像 → 版本+1、旧画像“已被取代”仍可查、受影响批次列出 B-2025-01 |
 
 ### 6.3 关键接口速查（均需 `X-Auth-Token`，登录接口除外）
 
@@ -129,11 +145,41 @@ POST /api/clusters/{id}/adjudicate   人工裁决
 POST /api/datasets/generate          按版本+口径生成数据集
 GET  /api/datasets/{id}/scores       管段顺位与解释
 GET  /api/datasets/{id}/impacts      图纸修订影响清单
+
+# 承包商判读一致性数据服务
+GET  /api/consistency/readers                     判读方（承包商/复核组）
+GET  /api/consistency/samples                     共同样本（可按 method/standardCode 过滤）
+GET  /api/consistency/samples/{id}                样本判读与盲评任务
+GET  /api/consistency/samples/{id}/evidence       证据查询：配对差异、混淆来源、排除原因、更正历史
+POST /api/consistency/samples/draw-designed       分层抽取设计盲评样本
+POST /api/consistency/samples/detect-natural      识别自然重叠复检并建模
+POST /api/consistency/readings                    录入判读（blind/seenPriorReading 决定是否独立盲评）
+POST /api/consistency/readings/{id}/correct       更正原判读（生成新版本，旧记录保留）
+GET  /api/consistency/analysis?method=&standardCode=  分层一致性结果（配对/混淆/区间/覆盖告警）
+GET  /api/consistency/coverage?method=            严重度层与区域覆盖边界
+POST /api/consistency/profiles/publish            发布质量画像新版本（不回写缺陷等级）
+GET  /api/consistency/profiles                    画像版本列表
+GET  /api/consistency/profiles/{id}               画像指标
+```
+
+### 6.4 OpenAPI / Swagger UI（后端服务，已实际验证）
+
+- Swagger UI：`http://localhost:8080/swagger-ui.html`（HTTP 200）
+- OpenAPI 3 描述符：`http://localhost:8080/v3/api-docs`（HTTP 200，含 13 个 `/api/consistency/**` 路径）
+- 文档中已声明 `X-Auth-Token` 鉴权；`/v3/api-docs`、`/swagger-ui/**` 免登录。
+
+```bash
+# 登录后取令牌，供 Swagger “Authorize” 或 curl 使用
+curl -s -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123"}'
 ```
 
 ## 7. 虚构样例数据说明
 
 - 资产：2 个版本。V2024-01 含 WS-001/WS-002/WS-003；V2026-06 将 WS-003 在 22m 处拆分为 WS-003A/WS-003B（新增井 MH03X）。
-- 检测：3 个批次（甲勘测院 2025-03、乙检测公司 2025-09 反向里程、甲复测 2026-03），8 个视频、14 条观察，
-  覆盖裂缝/变形/渗漏/接口错位四类缺陷与 I–IV、A–D 两套分级标准。
+- 检测：4 个批次（甲勘测院 2025-03、乙检测公司 2025-09 反向里程、甲复测 2026-03、丙检测公司 2025-05），9 个视频、16 条观察，
+  覆盖裂缝/变形/渗漏/接口错位四类缺陷与 I–IV、A–D 两套分级标准。丙批次的两条等级 I 轻微裂缝与甲批次在 WS-001 自然重叠，低于判读门槛，供自然重叠识别演示。
+- 判读一致性：5 位判读方（甲/乙/丙 + 复核一组/二组），9 个预置共同样本（5 设计分层 + 4 自然重叠），
+  覆盖轻度/中度/严重三个严重度层与 AREA-A/AREA-B 区域；预置样例刻意包含：设计层缺 SEVERE、非盲复核、跨规程判读、
+  丙公司仅 1 个有效样本、同一片段设计/自然双登记等边界，供验证排除与告警规则。
 - 所有数据均为虚构，视频 URI 使用 `archive://` 占位索引，不依赖真实媒体文件。

@@ -88,4 +88,55 @@ public final class Models {
     public record AuditLog(Long id, Long userId, String action, String targetRef, String detail,
                            LocalDateTime createdAt) {
     }
+
+    // ------------------------------------------------------------ 判读一致性域
+    public record ConsistencyReader(Long id, String readerCode, String readerName, String readerType,
+                                    String vendorName, String note) {
+    }
+
+    public record ConsistencySample(Long id, String sampleCode, String sourceType, String standardCode,
+                                    String defectType, String severityBand, String regionCode,
+                                    String difficultyBand, Long videoId, Long canonicalVideoId,
+                                    String canonicalKey, String segmentCode,
+                                    BigDecimal clipStartM, BigDecimal clipEndM,
+                                    Integer referenceGrade, String referenceSource, String status,
+                                    String originRef, String samplingNote, Long createdBy,
+                                    LocalDateTime createdAt) {
+    }
+
+    public record ConsistencyAssignment(Long id, Long sampleId, Long readerId, String blindIdentity,
+                                        String status, LocalDateTime assignedAt,
+                                        LocalDateTime submittedAt) {
+    }
+
+    public record ConsistencyReading(Long id, Long sampleId, Long readerId, Long assignmentId,
+                                     Long sourceBatchId, String blindIdentity, String standardCode,
+                                     String rawGrade, Integer normalizedGrade, Boolean blind,
+                                     Boolean independent, Long seenPriorReadingId, Boolean active,
+                                     Integer revisionNo, Long revisionOfId, Long supersededById,
+                                     String correctionReason, String note,
+                                     LocalDateTime submittedAt) {
+    }
+
+    public record ConsistencyProfile(Long id, String profileCode, String method, String standardScope,
+                                     Integer versionNo, String status, Integer sampleCount,
+                                     Integer independentSampleCount, Integer readingCount,
+                                     Integer pairedObservationCount, Integer excludedNonBlind,
+                                     Integer excludedCrossStandard, String sparseReaderCodes,
+                                     String severityCoverageNote, String coverageNote,
+                                     String revisionReason, String affectedBatches,
+                                     Long supersedesProfileId, LocalDateTime generatedAt,
+                                     Long generatedBy) {
+    }
+
+    public record ConsistencyProfileMetric(Long id, Long profileId, Long readerId, String standardCode,
+                                           String defectType, String severityBand, String regionCode,
+                                           Integer pairedN, Integer distinctSampleN,
+                                           BigDecimal meanBias, BigDecimal biasCiLow,
+                                           BigDecimal biasCiHigh, BigDecimal disagreementIndex,
+                                           BigDecimal agreementRate, BigDecimal agreementCiLow,
+                                           BigDecimal agreementCiHigh, BigDecimal withinOneRate,
+                                           Integer stricterCount, Integer looserCount,
+                                           String metricStatus, String note) {
+    }
 }

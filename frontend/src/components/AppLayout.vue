@@ -8,6 +8,7 @@
         <router-link to="/assets">资产版本与图谱</router-link>
         <router-link to="/inspections">检测归档与对齐</router-link>
         <router-link to="/clusters">缺陷聚类与冲突</router-link>
+        <router-link to="/consistency">承包商判读一致性</router-link>
         <router-link to="/datasets">评估数据集与顺位</router-link>
         <router-link to="/rules">判读规则</router-link>
         <router-link to="/audit">审计日志</router-link>
@@ -42,6 +43,7 @@ const titles = {
   assets: '资产资料：井、管段与有效版本',
   inspections: '检测归档：视频索引、观察与位置对齐',
   clusters: '缺陷聚类：去重、冲突与人工裁决',
+  consistency: '承包商判读一致性：共同样本、盲评配对与质量画像',
   datasets: '评估数据集：风险顺位与历史复现',
   rules: '判读规则（入围门槛）',
   audit: '审计日志'
